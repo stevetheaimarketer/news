@@ -16,17 +16,17 @@
 <style>
   :root {
     --bg:#f2f2f7; --card:#ffffff; --text:#111111; --muted:#6e6e73;
-    --line:#e5e5ea; --field:#e3e3e8; --accent:#c8102e; --tile:#d1d1d6;
+    --line:#e5e5ea; --field:#e3e3e8; --accent:#c8102e; --tile:#d1d1d6; --lift:rgba(0,0,0,.18);
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
       --bg:#000000; --card:#1c1c1e; --text:#f5f5f7; --muted:#98989d;
-      --line:#38383a; --field:#1c1c1e; --accent:#ff453a; --tile:#3a3a3c;
+      --line:#38383a; --field:#1c1c1e; --accent:#ff453a; --tile:#3a3a3c; --lift:rgba(0,0,0,.6);
     }
   }
   :root[data-theme="dark"] {
     --bg:#000000; --card:#1c1c1e; --text:#f5f5f7; --muted:#98989d;
-    --line:#38383a; --field:#1c1c1e; --accent:#ff453a; --tile:#3a3a3c;
+    --line:#38383a; --field:#1c1c1e; --accent:#ff453a; --tile:#3a3a3c; --lift:rgba(0,0,0,.6);
   }
   * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
   html { -webkit-text-size-adjust:100%; }
@@ -36,10 +36,15 @@
     padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
   }
   main { max-width:560px; margin:0 auto; padding:12px 16px 48px; }
-  h1 { font-size:34px; font-weight:800; letter-spacing:-.02em; margin:16px 4px 12px; }
+  header { display:flex; align-items:flex-end; justify-content:space-between; margin:16px 4px 12px; }
+  h1 { font-size:34px; font-weight:800; letter-spacing:-.02em; margin:0; }
+  button.text {
+    border:0; background:none; color:var(--accent); font:inherit; font-size:17px; font-weight:600;
+    padding:8px 4px; cursor:pointer;
+  }
   .search {
     position:sticky; top:0; z-index:2; background:var(--bg);
-    padding:8px 0 12px; margin:0 -16px; padding-left:16px; padding-right:16px;
+    padding:8px 16px 12px; margin:0 -16px;
   }
   .search input {
     width:100%; border:0; border-radius:12px; background:var(--field); color:var(--text);
@@ -48,13 +53,14 @@
     background-repeat:no-repeat; background-position:12px center;
   }
   .search input::placeholder { color:var(--muted); }
+  .hint { display:none; color:var(--muted); font-size:14px; margin:4px 4px 0; }
   h2 {
     font-size:13px; font-weight:600; text-transform:uppercase; letter-spacing:.04em;
     color:var(--muted); margin:20px 16px 8px;
   }
   ul { list-style:none; margin:0; padding:0; background:var(--card); border-radius:14px; overflow:hidden; }
-  li + li a { border-top:.5px solid var(--line); }
-  li + li { margin-left:0; }
+  li { background:var(--card); }
+  li + li { border-top:.5px solid var(--line); }
   a.row {
     display:flex; align-items:center; gap:14px; min-height:64px;
     padding:10px 14px; color:inherit; text-decoration:none;
@@ -70,83 +76,189 @@
   .name { font-weight:600; font-size:17px; }
   .desc { color:var(--muted); font-size:14px; margin-top:2px; }
   .chev { flex:0 0 auto; color:var(--muted); opacity:.6; font-size:20px; }
+  .grip {
+    display:none; flex:0 0 44px; height:44px; margin:-6px -10px -6px 0;
+    align-items:center; justify-content:center; color:var(--muted); touch-action:none; cursor:grab;
+  }
+  .grip svg { display:block; }
   .empty { display:none; text-align:center; color:var(--muted); margin:40px 0; }
-  section[hidden] { display:none; }
+  section[hidden], li[hidden] { display:none; }
+  .reset { display:none; text-align:center; margin:28px 0 0; }
+  .reset button { color:var(--muted); font-weight:500; }
+
+  body.editing .chev { display:none; }
+  body.editing .grip { display:flex; }
+  body.editing a.row:active { background:none; }
+  body.editing .search { display:none; }
+  body.editing .hint { display:block; }
+  body.editing .reset { display:block; }
+  .ghost { opacity:.35; }
+  .drag { box-shadow:0 8px 24px var(--lift); border-radius:12px; }
 </style>
 </head>
 <body>
 <main>
-  <h1>News</h1>
-  <div class="search"><input id="q" type="search" placeholder="Search 21 sites" autocomplete="off" autocorrect="off" spellcheck="false"></div>
+  <header>
+    <h1>News</h1>
+    <button class="text" id="edit" type="button">Edit</button>
+  </header>
+  <p class="hint">Drag the ≡ handle to reorder. Tap Done when finished.</p>
+  <div class="search"><input id="q" type="search" placeholder="Search" autocomplete="off" autocorrect="off" spellcheck="false"></div>
   <div id="lists"></div>
   <p class="empty" id="empty">No matches</p>
+  <div class="reset"><button class="text" id="reset" type="button">Reset order</button></div>
 </main>
+<script src="Sortable.min.js"></script>
 <script>
+// [name, url, description, optional icon domain]
 var groups = [
-  ["List 1", [
+  ["Top news", [
+    ["Reuters","https://www.reuters.com","Global wire service, straight news fast"],
+    ["AP News","https://apnews.com","US wire service, breaking news worldwide"],
+    ["The Wall Street Journal","https://www.wsj.com","Business, markets and US politics"],
+    ["The New York Times","https://www.nytimes.com","US and world news, in-depth reporting"],
+    ["The Washington Post","https://www.washingtonpost.com","US politics and national news"],
+    ["Bloomberg","https://www.bloomberg.com","Markets, business and economics"],
+    ["Financial Times","https://www.ft.com","Global business and finance"],
+    ["BBC News","https://www.bbc.com/news","UK and world news"],
+    ["The Guardian","https://www.theguardian.com","UK left-of-centre news and comment"],
+    ["The Economist","https://www.economist.com","Weekly world affairs and economics"],
+    ["NPR","https://www.npr.org","US public radio news"]
+  ]],
+  ["Canadian", [
+    ["CBC News","https://www.cbc.ca/news","Canada's public broadcaster"],
+    ["The Globe and Mail","https://www.theglobeandmail.com","Canadian national news and business"],
+    ["Toronto Star","https://www.thestar.com","Toronto and Ontario news"],
+    ["National Post","https://nationalpost.com","Canadian centre-right news and comment"],
+    ["CTV News","https://www.ctvnews.ca","Canadian TV news, national and local"],
+    ["Global News","https://globalnews.ca","Canadian national and local news"],
+    ["The Line","https://www.readtheline.ca","Canadian political commentary"],
+    ["The Walrus","https://thewalrus.ca","Canadian long-form on politics and culture"],
+    ["The Maple","https://www.readthemaple.com","Left-leaning news and analysis: labour, housing, foreign policy"]
+  ]],
+  ["US politics", [
+    ["Politico","https://www.politico.com","Washington politics and policy"],
     ["Axios","https://www.axios.com","Short-form politics and policy news"],
     ["The Hill","https://thehill.com","Washington politics and Congress"],
     ["Semafor","https://www.semafor.com","Global politics and business news"],
-    ["The Atlantic","https://www.theatlantic.com","Long-form ideas and politics"],
-    ["The Free Press","https://www.thefp.com","Heterodox commentary"],
-    ["Quillette","https://quillette.com","Contrarian essays on culture and politics"],
-    ["The Spectator","https://www.spectator.co.uk","UK opinion and politics"],
-    ["The New Statesman","https://www.newstatesman.com","UK left-of-centre commentary"],
-    ["Compact","https://www.compactmag.com","Cross-partisan populist commentary"],
-    ["Persuasion","https://www.persuasion.community","Liberal-democracy essays"]
-  ]],
-  ["List 2", [
-    ["The Bulwark","https://www.thebulwark.com","Anti-Trump conservative commentary"],
-    ["The American Conservative","https://www.theamericanconservative.com","Realist, populist right"],
-    ["Tablet","https://www.tabletmag.com","Jewish-rooted culture and politics essays"],
     ["The Dispatch","https://thedispatch.com","Fact-based centre-right reporting"],
     ["Vox","https://www.vox.com","Explanatory politics and policy"],
-    ["Foreign Policy","https://foreignpolicy.com","World affairs analysis"],
+    ["The Bulwark","https://www.thebulwark.com","Anti-Trump conservative commentary"]
+  ]],
+  ["Opinion and ideas", [
+    ["The Atlantic","https://www.theatlantic.com","Long-form ideas and politics"],
+    ["The Free Press","https://www.thefp.com","Heterodox commentary"],
+    ["UnHerd","https://unherd.com","Contrarian commentary on politics and culture"],
+    ["Quillette","https://quillette.com","Contrarian essays on culture and politics"],
+    ["Compact","https://www.compactmag.com","Cross-partisan populist commentary"],
+    ["Persuasion","https://www.persuasion.community","Liberal-democracy essays"],
+    ["The American Conservative","https://www.theamericanconservative.com","Realist, populist right"],
+    ["Tablet","https://www.tabletmag.com","Jewish-rooted culture and politics essays"]
+  ]],
+  ["UK and world", [
+    ["The Spectator","https://www.spectator.co.uk","UK opinion and politics"],
+    ["The New Statesman","https://www.newstatesman.com","UK left-of-centre commentary"],
     ["Prospect","https://www.prospectmagazine.co.uk","UK ideas and politics"],
     ["The Critic","https://thecritic.co.uk","UK contrarian right-of-centre"],
-    ["The Line","https://www.readtheline.ca","Canadian political commentary"],
-    ["The Walrus","https://thewalrus.ca","Canadian long-form on politics and culture"]
+    ["Foreign Policy","https://foreignpolicy.com","World affairs analysis"]
   ]],
-  ["Canadian", [
-    ["The Maple","https://www.readthemaple.com","Left-leaning news and analysis: labour, housing, foreign policy"]
+  ["Sports", [
+    ["TSN","https://www.tsn.ca","Canadian sports news and scores"],
+    ["Sportsnet","https://www.sportsnet.ca","Canadian sports, Leafs and Jays coverage"],
+    ["ESPN","https://www.espn.com","US sports news and scores"],
+    ["The Athletic","https://www.nytimes.com/athletic","In-depth team-by-team sports reporting","theathletic.com"],
+    ["NHL.com","https://www.nhl.com","Official hockey scores, standings and news"],
+    ["BBC Sport","https://www.bbc.com/sport","UK and world sport"]
   ]]
 ];
 
+var KEY = "newsOrder.v1";
+function loadOrder() { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) { return {}; } }
+function saveOrder(o) { try { localStorage.setItem(KEY, JSON.stringify(o)); } catch (e) {} }
+function clearOrder() { try { localStorage.removeItem(KEY); } catch (e) {} }
+
 var root = document.getElementById("lists");
+var sortables = [];
+var editing = false;
+var total = 0;
+
 function el(tag, cls, text) {
   var n = document.createElement(tag);
   if (cls) n.className = cls;
   if (text != null) n.textContent = text;
   return n;
 }
-groups.forEach(function (g) {
-  var sec = el("section");
-  sec.appendChild(el("h2", null, g[0]));
-  var ul = el("ul");
-  g[1].forEach(function (s) {
-    var host = new URL(s[1]).hostname.replace(/^www\./, "");
-    var li = el("li");
-    li.dataset.k = (s[0] + " " + s[2] + " " + host + " " + g[0]).toLowerCase();
-    var a = el("a", "row");
-    a.href = s[1]; a.target = "_blank"; a.rel = "noopener";
-    var ico = el("span", "ico");
-    var img = new Image();
-    img.alt = ""; img.loading = "lazy";
-    img.src = "https://icons.duckduckgo.com/ip3/" + host + ".ico";
-    img.onerror = function () { ico.textContent = s[0].replace(/^The /, "").charAt(0); };
-    ico.appendChild(img);
-    var txt = el("span", "txt");
-    txt.appendChild(el("div", "name", s[0]));
-    txt.appendChild(el("div", "desc", s[2]));
-    a.appendChild(ico); a.appendChild(txt); a.appendChild(el("span", "chev", "›"));
-    li.appendChild(a); ul.appendChild(li);
+var GRIP = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 8h16M4 12h16M4 16h16"/></svg>';
+
+function ordered(name, items, saved) {
+  var list = saved[name];
+  if (!list || !list.length) return items.slice();
+  var byUrl = {}; items.forEach(function (s) { byUrl[s[1]] = s; });
+  var out = [];
+  list.forEach(function (u) { if (byUrl[u]) { out.push(byUrl[u]); delete byUrl[u]; } });
+  items.forEach(function (s) { if (byUrl[s[1]]) out.push(s); }); // new sites go at the end
+  return out;
+}
+
+function render() {
+  sortables.forEach(function (s) { s.destroy(); });
+  sortables = [];
+  root.textContent = "";
+  total = 0;
+  var saved = loadOrder();
+  groups.forEach(function (g) {
+    var sec = el("section");
+    sec.dataset.group = g[0];
+    sec.appendChild(el("h2", null, g[0]));
+    var ul = el("ul");
+    ordered(g[0], g[1], saved).forEach(function (s) {
+      total++;
+      var host = new URL(s[1]).hostname.replace(/^www\./, "");
+      var li = el("li");
+      li.dataset.url = s[1];
+      li.dataset.k = (s[0] + " " + s[2] + " " + host + " " + g[0]).toLowerCase();
+      var a = el("a", "row");
+      a.href = s[1]; a.target = "_blank"; a.rel = "noopener";
+      var ico = el("span", "ico");
+      var img = new Image();
+      img.alt = ""; img.loading = "lazy";
+      img.src = "https://icons.duckduckgo.com/ip3/" + (s[3] || host) + ".ico";
+      img.onerror = function () { ico.textContent = s[0].replace(/^The /, "").charAt(0); };
+      ico.appendChild(img);
+      var txt = el("span", "txt");
+      txt.appendChild(el("div", "name", s[0]));
+      txt.appendChild(el("div", "desc", s[2]));
+      var grip = el("span", "grip"); grip.innerHTML = GRIP; grip.setAttribute("aria-label", "Drag to reorder");
+      a.appendChild(ico); a.appendChild(txt); a.appendChild(el("span", "chev", "›")); a.appendChild(grip);
+      li.appendChild(a); ul.appendChild(li);
+    });
+    sec.appendChild(ul);
+    root.appendChild(sec);
+    if (window.Sortable) {
+      sortables.push(Sortable.create(ul, {
+        handle: ".grip", animation: 160, disabled: !editing,
+        ghostClass: "ghost", chosenClass: "drag", forceFallback: true, fallbackTolerance: 3,
+        onEnd: persist
+      }));
+    }
   });
-  sec.appendChild(ul);
-  root.appendChild(sec);
+  document.getElementById("q").placeholder = "Search " + total + " sites";
+}
+
+function persist() {
+  var o = {};
+  root.querySelectorAll("section").forEach(function (sec) {
+    o[sec.dataset.group] = Array.prototype.map.call(sec.querySelectorAll("li"), function (li) { return li.dataset.url; });
+  });
+  saveOrder(o);
+}
+
+root.addEventListener("click", function (e) {
+  if (editing && e.target.closest("a")) e.preventDefault();
 });
 
 var q = document.getElementById("q"), empty = document.getElementById("empty");
-q.addEventListener("input", function () {
+function filter() {
   var t = q.value.trim().toLowerCase(), any = false;
   root.querySelectorAll("section").forEach(function (sec) {
     var shown = 0;
@@ -157,7 +269,32 @@ q.addEventListener("input", function () {
     sec.hidden = shown === 0; if (shown) any = true;
   });
   empty.style.display = any ? "none" : "block";
+}
+q.addEventListener("input", filter);
+
+var editBtn = document.getElementById("edit");
+editBtn.addEventListener("click", function () {
+  editing = !editing;
+  if (editing) { q.value = ""; filter(); }
+  document.body.classList.toggle("editing", editing);
+  editBtn.textContent = editing ? "Done" : "Edit";
+  sortables.forEach(function (s) { s.option("disabled", !editing); });
+  resetBtn.textContent = "Reset order"; armed = false;
 });
+
+var resetBtn = document.getElementById("reset"), armed = false, armTimer;
+resetBtn.addEventListener("click", function () {
+  if (!armed) {
+    armed = true; resetBtn.textContent = "Tap again to reset";
+    clearTimeout(armTimer);
+    armTimer = setTimeout(function () { armed = false; resetBtn.textContent = "Reset order"; }, 3000);
+    return;
+  }
+  armed = false; clearOrder(); render(); resetBtn.textContent = "Order reset";
+  setTimeout(function () { resetBtn.textContent = "Reset order"; }, 1500);
+});
+
+render();
 </script>
 </body>
 </html>
